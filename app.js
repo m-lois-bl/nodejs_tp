@@ -1,7 +1,11 @@
+// ==================== Imports : Début ====================
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuid } = require('uuid');
 const mongoose = require('mongoose');
+const uniqueValidator = require('mongoose-unique-validator');
+// ==================== Imports : Fin ====================
+
 
 //Instanciation de l'application serveur
 const app = express();
@@ -15,13 +19,14 @@ let articles = [
     { id: 3, title: 'Troisième article', content: 'Contenu du troisième article', author: 'Toto' }
 ];
 
-//Configuration de la BDD
+// ==================== Configuration de la BDD : Début  ====================
 mongoose.connection.once('open', () => {
     console.log("Connecté à la BDD.");
 });
 mongoose.connection.on('error', () => {
     console.log(`Erreur de bdd : ${err}.`);
 })
+// Articles
 mongoose.connect('mongodb://localhost:27017/db_articles');
 const Article = mongoose.model('Article', {
     uuid : String,
@@ -30,7 +35,20 @@ const Article = mongoose.model('Article', {
     author: String
 }, 'articles');
 
-//Déclaration des routes
+// Utilisateurs
+const userSchema = mongoose.Schema({
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true }
+  });
+  
+userSchema.plugin(uniqueValidator);
+  
+module.exports = mongoose.model('User', userSchema);
+
+// ==================== Configuration de la BDD : Fin  ====================
+
+
+// ==================== Déclaration des routes ====================
 app.get('/articles', async (request, response) => {
     const articles = await Article.find();
     return response.status(200).json({
@@ -55,7 +73,6 @@ app.post('/save-article',
     async (request, response) => {
 
     const articleJSON = request.body;
-    let existingArticle = null;
     let articleWithSameTitle = await Article.findOne({ title: articleJSON.title });
 
     // Si l'article n'existe pas déjà : création
@@ -71,24 +88,22 @@ app.post('/save-article',
             article: createdArticle});
     }
     //Sinon : modification
-    existingArticle = await Article.findOne({ uuid: articleJSON.uuid });
-    if(!existingArticle){
+    let articleToUpdate = await Article.findOne({ uuid: articleJSON.uuid });
+    if(!articleToUpdate){
         return response.json({ message: "L'article demandé n'existe pas. Modification impossible."})
     }
-    if(articleWithSameTitle & articleWithSameTitle.uuid != existingArticle.uuid){
+    if(articleWithSameTitle &&= articleWithSameTitle.uuid != articleToUpdate.uuid){
         return response.status(701).json({ message: "Impossible de modifier un article si un autre article possède un titre similaire", article: undefined})
     }
-    await Article.updateOne({ uuid: articleJSON.uuid}, {...articleJSON});
-    const updatedArticle = await Article.findOne({ uuid: articleJSON.uuid });
+    articleToUpdate.title = articleJSON.title;
+    articleToUpdate.content = articleJSON.content;
+    articleToUpdate.author = articleJSON.author;
+    await articleToUpdate.save()
     return response.status(200).json({
         message: "Article modifié avec succès",
-        article: updatedArticle
+        article: articleToUpdate
     });
   
-
-    
-
-    // return response.redirect('/articles');
 })
 
 app.delete('/article/:id', async (request, response) => {
@@ -99,8 +114,6 @@ app.delete('/article/:id', async (request, response) => {
         return response.status(200).json({message: `Suppression avec succès de l'article ayant pour id ${uuidParam}.`, article: existingArticle})
     }
     return response.json({message: `Pas d'article trouvé pour l'id ${uuidParam}.`, article: undefined})
-
-    //return response.redirect('/articles');
     
 })
 
