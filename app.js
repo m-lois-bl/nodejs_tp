@@ -1,5 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { v4: uuid } = require('uuid');
+const mongoose = require('mongoose');
 
 //Instanciation de l'application serveur
 const app = express();
@@ -13,57 +15,90 @@ let articles = [
     { id: 3, title: 'Troisième article', content: 'Contenu du troisième article', author: 'Toto' }
 ];
 
+//Configuration de la BDD
+mongoose.connection.once('open', () => {
+    console.log("Connecté à la BDD.");
+});
+mongoose.connection.on('error', () => {
+    console.log(`Erreur de bdd : ${err}.`);
+})
+mongoose.connect('mongodb://localhost:27017/db_articles');
+const Article = mongoose.model('Article', {
+    uuid : String,
+    title : String,
+    content : String,
+    author: String
+}, 'articles');
+
 //Déclaration des routes
-app.get('/articles', (request, response) => {
-    return response.json({articles : articles});
+app.get('/articles', async (request, response) => {
+    const articles = await Article.find();
+    return response.status(200).json({
+        message: "La liste des articles a été récupérés avec succès",
+        articles: articles});
 })
 
-app.get('/article/:id', (request, response) => {
-    const id = parseInt(request.body.id);
-    const existingArticle = articles.find((article) => article.id === id);
-    return response.json(existingArticle);
+app.get('/article/:id', async (request, response) => {
+    const uuidParam = request.params.id;
+
+    const existingArticle = await Article.findOne({ uuid: uuidParam });
+    if(!existingArticle){
+        return response.status(702).json({ message: `Impossible de récupérer un article avec l'UID ${uuidParam}.`})
+    }
+    return response.status(200).json({
+        message: "Article récupéré avec succès",
+        article: existingArticle
+    });
 })
 
 app.post('/save-article',
-    body('id').isInt(), 
-    (request, response) => {
-    // On vérifie s'il n'y a pas d'erreur :
-    const errors = validationResult(request)
-    if(!errors.isEmpty()){
-        response.send({errors: errors.array()});
-    }
-    
+    async (request, response) => {
+
     const articleJSON = request.body;
     let existingArticle = null;
+    let articleWithSameTitle = await Article.findOne({ title: articleJSON.title });
 
-    // On vérifie si l'article n'existe pas déjà :
-    if(!articleJSON.id){
-        return response.json({error: 'Id manquant, la demande de création / modification ne peut être traitée.'})
+    // Si l'article n'existe pas déjà : création
+    if(!articleJSON.uuid){
+        if(articleWithSameTitle){
+            return response.status(701).json({ message: "Impossible d'ajouter un article avec un titre déjà existant", article: undefined})
+        }
+        articleJSON.uuid = uuid();
+        const createdArticle = await Article.create(articleJSON);
+        await createdArticle.save();
+        return response.status(200).json({
+            message: "Article ajouté avec succès", 
+            article: createdArticle});
     }
-
-    existingArticle = articles.find(article => article.id === articleJSON.id)
-
-    if(existingArticle){
-        existingArticle.title = articleJSON.title;
-        existingArticle.content = articleJSON.content;
-        existingArticle.author = articleJSON.author;
-        return response.json({message : `L'article avec l'ID ${articleJSON.id} a été mis à jour avec succès.`})
+    //Sinon : modification
+    existingArticle = await Article.findOne({ uuid: articleJSON.uuid });
+    if(!existingArticle){
+        return response.json({ message: "L'article demandé n'existe pas. Modification impossible."})
     }
+    if(articleWithSameTitle & articleWithSameTitle.uuid != existingArticle.uuid){
+        return response.status(701).json({ message: "Impossible de modifier un article si un autre article possède un titre similaire", article: undefined})
+    }
+    await Article.updateOne({ uuid: articleJSON.uuid}, {...articleJSON});
+    const updatedArticle = await Article.findOne({ uuid: articleJSON.uuid });
+    return response.status(200).json({
+        message: "Article modifié avec succès",
+        article: updatedArticle
+    });
+  
 
-    articles.push(request.body);
-    return response.json({message : `L'article avec l'ID ${articleJSON.id} a été créé avec succès.`})
+    
 
     // return response.redirect('/articles');
 })
 
-app.delete('/article/:id', (request, response) => {
-    const id = parseInt(request.params.id);
-    const existingArticle = articles.find((article) => article.id === id);
+app.delete('/article/:id', async (request, response) => {
+    const uuidParam = request.params.id;
+    const existingArticle = await Article.findOne({ uuid: uuidParam });
     if(existingArticle){
-        articles.splice(articles.indexOf(existingArticle), 1);
-        return response.json({message: `Suppression avec succès de l'article ayant pour id ${id}.`})
+        await Article.deleteOne({ uuid : uuidParam});
+        return response.status(200).json({message: `Suppression avec succès de l'article ayant pour id ${uuidParam}.`, article: existingArticle})
     }
-    return response.json({message: `Pas d'article trouvé pour l'id ${id}.`})
+    return response.json({message: `Pas d'article trouvé pour l'id ${uuidParam}.`, article: undefined})
 
     //return response.redirect('/articles');
     
