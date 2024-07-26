@@ -36,10 +36,7 @@ exports.saveArticle = async (request, response) => {
         const createdArticle = await Article.create(articleJSON);
         await createdArticle.save();
         return response.status(200).json(createJsonResponse("200", "Article ajouté avec succès", createdArticle));
-        // return response.status(200).json({
-        //     code: "200",
-        //     message: "Article ajouté avec succès", 
-        //     article: createdArticle});
+
     }
     //Sinon : modification
     let articleToUpdate = await Article.findOne({ uuid: articleJSON.uuid });

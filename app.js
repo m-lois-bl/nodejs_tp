@@ -2,12 +2,14 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const articlesRoutes = require('./routes/articles')
+const userRoutes = require('./routes/user');
 // ==================== Imports : Fin ====================
 
 
 //Instanciation de l'application serveur
 const app = express();
 app.use('', articlesRoutes);
+app.use('/auth', userRoutes);
 
 
 // ==================== Configuration de la BDD : Début  ====================
